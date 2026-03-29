@@ -1,0 +1,14 @@
+{
+  "name": "auto-register",
+  "version": "1.0.0",
+  "description": "自动通过 API 注册账号并跟随重定向获取页面数据",
+  "main": "register.js",
+  "scripts": {
+    "start": "node register.js"
+  },
+  "dependencies": {
+    "axios": "^1.4.0",
+    "cheerio": "^1.0.0-rc.12",
+    "clipboardy": "^3.0.0"
+  }
+}
