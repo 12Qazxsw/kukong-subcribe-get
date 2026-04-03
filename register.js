@@ -17,6 +17,42 @@ function makeAxios(allowInsecure = false) {
   });
 }
 
+// axios 请求带重试与 5s 无响应报告
+async function axiosWithRetries(client, requestConfig, description = '', maxRetries = 3, reportAfterMs = 5000) {
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    const controller = new AbortController();
+    // attach signal
+    requestConfig.signal = controller.signal;
+
+    // 定时器：reportAfterMs 后如果还未完成则 abort 并打印信息
+    const timeoutId = setTimeout(() => {
+      try {
+        controller.abort();
+      } catch (e) {}
+      console.warn(`[网络超时] ${description}：已等待 ${reportAfterMs/1000}s。尝试 ${attempt}/${maxRetries}，将重试。`);
+    }, reportAfterMs);
+
+    try {
+      const res = await client(requestConfig);
+      clearTimeout(timeoutId);
+      return res;
+    } catch (err) {
+      clearTimeout(timeoutId);
+      const isLast = attempt === maxRetries;
+      const code = err && err.code ? err.code : (err && err.response && err.response.status ? err.response.status : null);
+      // 如果不是最后一次，输出信息并继续重试
+      if (!isLast) {
+        console.warn(`[请求失败] ${description}：第 ${attempt}/${maxRetries} 次失败，错误：${code || err.message}. 正在重试...`);
+        // 小等待再重试
+        await new Promise(r => setTimeout(r, 800));
+        continue;
+      }
+      // 最后一次仍然失败，抛出错误
+      throw err;
+    }
+  }
+}
+
 const BASE_URL = 'https://51wukong.org';
 const REGISTER_PATH = '/auth/register';
 const REGISTER_URL = BASE_URL + REGISTER_PATH;
@@ -119,14 +155,24 @@ async function registerOne() {
 
     try {
       const client = makeAxios(false);
-      res = await client.post(REGISTER_URL, params.toString(), postOptions);
+      res = await axiosWithRetries(client, {
+        method: 'post',
+        url: REGISTER_URL,
+        data: params.toString(),
+        ...postOptions
+      }, '注册 POST', 3, 5000);
     } catch (err) {
       // on TLS/connection errors, retry with relaxed TLS (insecure)
       const code = err && err.code ? err.code : (err && err.response && err.response.status ? err.response.status : null);
       if (code === 'EPROTO' || code === 'ECONNRESET' || code === 'ECONNREFUSED' || code === 525) {
         try {
           const client2 = makeAxios(true);
-          res = await client2.post(REGISTER_URL, params.toString(), postOptions);
+          res = await axiosWithRetries(client2, {
+            method: 'post',
+            url: REGISTER_URL,
+            data: params.toString(),
+            ...postOptions
+          }, '注册 POST (insecure)', 3, 5000);
         } catch (err2) {
           throw err2;
         }
@@ -154,12 +200,12 @@ async function registerOne() {
     let pageRes;
     try {
       const client = makeAxios(false);
-      pageRes = await client.get(REGISTER_URL, { headers: getHeaders, withCredentials: true });
+      pageRes = await axiosWithRetries(client, { method: 'get', url: REGISTER_URL, headers: getHeaders, withCredentials: true }, 'GET 注册页面', 3, 5000);
     } catch (err) {
       const code = err && err.code ? err.code : null;
       if (code === 'EPROTO' || code === 'ECONNRESET' || code === 'ECONNREFUSED') {
         const client2 = makeAxios(true);
-        pageRes = await client2.get(REGISTER_URL, { headers: getHeaders, withCredentials: true });
+        pageRes = await axiosWithRetries(client2, { method: 'get', url: REGISTER_URL, headers: getHeaders, withCredentials: true }, 'GET 注册页面 (insecure)', 3, 5000);
       } else {
         throw err;
       }
@@ -231,12 +277,12 @@ async function registerOne() {
         let subPageRes;
         try {
           const client = makeAxios(false);
-          subPageRes = await client.get(subUrl, { headers: getHeaders, withCredentials: true });
+          subPageRes = await axiosWithRetries(client, { method: 'get', url: subUrl, headers: getHeaders, withCredentials: true }, 'GET 订阅中心页面', 3, 5000);
         } catch (err) {
           const code = err && err.code ? err.code : null;
           if (code === 'EPROTO' || code === 'ECONNRESET' || code === 'ECONNREFUSED') {
             const client2 = makeAxios(true);
-            subPageRes = await client2.get(subUrl, { headers: getHeaders, withCredentials: true });
+            subPageRes = await axiosWithRetries(client2, { method: 'get', url: subUrl, headers: getHeaders, withCredentials: true }, 'GET 订阅中心页面 (insecure)', 3, 5000);
           } else {
             subPageRes = null;
           }
@@ -320,12 +366,12 @@ async function fetchSubscriptionByLogin(account) {
   let res;
   try {
     const client = makeAxios(false);
-    res = await client.post(loginUrl, params.toString(), postOptions);
+    res = await axiosWithRetries(client, { method: 'post', url: loginUrl, data: params.toString(), ...postOptions }, '登录 POST', 3, 5000);
   } catch (err) {
     const code = err && err.code ? err.code : null;
     if (code === 'EPROTO' || code === 'ECONNRESET' || code === 'ECONNREFUSED') {
       const client2 = makeAxios(true);
-      res = await client2.post(loginUrl, params.toString(), postOptions);
+      res = await axiosWithRetries(client2, { method: 'post', url: loginUrl, data: params.toString(), ...postOptions }, '登录 POST (insecure)', 3, 5000);
     } else throw err;
   }
 
@@ -346,12 +392,12 @@ async function fetchSubscriptionByLogin(account) {
   let pageRes;
   try {
     const client = makeAxios(false);
-    pageRes = await client.get(subscribeUrl, { headers: getHeaders, withCredentials: true });
+    pageRes = await axiosWithRetries(client, { method: 'get', url: subscribeUrl, headers: getHeaders, withCredentials: true }, 'GET 订阅日志页面', 3, 5000);
   } catch (err) {
     const code = err && err.code ? err.code : null;
     if (code === 'EPROTO' || code === 'ECONNRESET' || code === 'ECONNREFUSED') {
       const client2 = makeAxios(true);
-      pageRes = await client2.get(subscribeUrl, { headers: getHeaders, withCredentials: true });
+      pageRes = await axiosWithRetries(client2, { method: 'get', url: subscribeUrl, headers: getHeaders, withCredentials: true }, 'GET 订阅日志页面 (insecure)', 3, 5000);
     } else throw err;
   }
 
