@@ -421,6 +421,16 @@ async function fetchSubscriptionByLogin(account) {
 async function main() {
   const arg = process.argv[2];
 
+  function printHelp() {
+    console.log(`使用说明：\nUsage: node register.js [count|fix|fix all|fix-all|help]\n\n参数说明：\n  count        创建指定数量账号（默认 1），例如 node register.js 5\n  fix          尝试为第一个缺少订阅的账号登录并获取订阅链接\n  fix all      为所有账号尝试获取订阅链接（等同于 fix-all）\n  fix-all      同上，处理全部账号\n  help, -h, --help  显示此帮助\n\n脚本会在当前目录生成/更新 used.json 和 accounts.json，并在成功获取订阅链接时尝试复制到剪贴板。`);
+  }
+
+  // 支持帮助参数，优先处理并退出
+  if (arg === 'help' || arg === '-h' || arg === '--help') {
+    printHelp();
+    return;
+  }
+
   // 启动时清理 accounts.json 中超过 1 天的账号
   purgeOldAccounts();
   if (arg === 'fix' || arg === 'fix-all' || (arg === 'fix' && process.argv[3] === 'all')) {
